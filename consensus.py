@@ -42,21 +42,35 @@ ALGO_METADATA = {
 
 FILL_VALUE = -999999999999.0
 FILL_VALUE_STR = "no_data"
-CV_THRESH = 0.3
 
 
-def remove_low_cv_and_recalc_consensus(arrs, time_arrs, CV_thresh, included_algos):
+
+def remove_rf_bad_and_recalc_consensus(reach_id, arrs, time_arrs, included_algos, rf_data, selected_metric):
     """
     For a list of discharge arrays:
-    - Removes arrays with CV < threshold
+    - Removes arrays with poor performance (prediction = 0) by Random Forest for selected metric
     - Recalculates consensus using the remaining arrays
 
     Parameters
     ----------
+    reach_id : int
+        SWORD reach ID.
+        
     arrs : list of np.ndarray
         Discharge arrays from each algorithm.
-    CV_thresh : float
-        Coefficient of variation threshold below which arrays are excluded.
+
+    time_arrs : list of np.ndarray
+        Time arrays corresponding to each discharge array.
+        
+    included_algos : list of str
+        Names of the available discharge algorithms.
+
+    rf_data : dict
+        Random Forest prediction data.
+
+    selected_metric : str
+        Metric used to filter algorithms
+        (e.g., "nBIAS_binary").
 
     Returns
     -------
@@ -64,32 +78,104 @@ def remove_low_cv_and_recalc_consensus(arrs, time_arrs, CV_thresh, included_algo
         Cleaned and recalculated consensus array.
     """
 
-    cv_arrs = []
-    cv_included_algos = []
-    cv_time_arrs = []
+    rf_arrs = []
+    rf_included_algos = []
+    rf_time_arrs = []
 
+
+    # -------------------------------------------------
+    # Find reach
+    # -------------------------------------------------
+    reach_idx = np.where(rf_data["reach_ids"] == reach_id)[0]
+
+    if len(reach_idx) == 0:
+        print(f"Reach {reach_id} not found in RF predictions.")
+        return (
+            np.full_like(arrs[0], np.nan),
+            np.full_like(arrs[0], "no_data", dtype=object),
+            []
+        )
+
+    reach_idx = reach_idx[0]
+
+
+    # -------------------------------------------------
+    # Find selected metric
+    # -------------------------------------------------
+    metric_idx = np.where(rf_data["metrics"] == selected_metric)[0]
+
+    if len(metric_idx) == 0:
+        raise ValueError(
+            f"Metric '{selected_metric}' not found in RF predictions."
+        )
+
+    metric_idx = metric_idx[0]
+
+
+    # -------------------------------------------------
+    # Keep algorithms with RF prediction = 1
+    # -------------------------------------------------
     for i, arr in enumerate(arrs):
-        mean = np.nanmean(arr)
-        std = np.nanstd(arr)
-        cv = std / mean if mean != 0 else np.nan
 
-        if not np.isnan(cv) and cv > CV_thresh:
-            cv_arrs.append(arr)
-            cv_included_algos.append(included_algos[i])
-            cv_time_arrs.append(time_arrs[i])
+        algo = included_algos[i]
 
-    if not len(cv_arrs):
-        print("All algorithms removed due to low CV; returning NaN array and no included algos.")
-        return np.full_like(arrs[0], np.nan), np.full_like(arrs[0], "no_data", dtype=object), []
+        algo_idx = np.where(
+            np.char.lower(rf_data["algorithms"].astype(str))
+            == algo.lower()
+        )[0]
 
+        if len(algo_idx) == 0:
+            print(f"Algorithm {algo} not found in RF predictions.")
+            continue
+
+        algo_idx = algo_idx[0]
+
+        pred = rf_data["predictions"][
+            reach_idx,
+            algo_idx,
+            metric_idx
+        ]
+
+        print(
+            f"  {algo}: {selected_metric} prediction = {pred}"
+        )
+
+        if pred == 1:
+            rf_arrs.append(arr)
+            rf_included_algos.append(included_algos[i])
+            rf_time_arrs.append(time_arrs[i])
+
+
+    # -------------------------------------------------
+    # No algorithms remain after RF filtering
+    # -------------------------------------------------
+    if not len(rf_arrs):
+        print(
+            f"All algorithms removed by RF for reach {reach_id} "
+            f"using {selected_metric}."
+        )
+
+        return (
+            np.full_like(arrs[0], np.nan),
+            np.full_like(arrs[0], "no_data", dtype=object),
+            []
+        )
+
+
+    # -------------------------------------------------
     # Compute median consensus
-    consensus_arr = np.nanmedian(np.stack(cv_arrs, axis=0), axis=0)
-    selected_time_arr = time_arrs[0]
+    # -------------------------------------------------
+    consensus_arr = np.nanmedian(
+        np.stack(rf_arrs, axis=0),
+        axis=0
+    )
 
-    return consensus_arr, selected_time_arr, cv_included_algos
+    selected_time_arr = rf_time_arrs[0]
+
+    return consensus_arr, selected_time_arr, rf_included_algos
 
 
-def process_reach(reach_id, mntdir):
+def process_reach(reach_id, mntdir, rf_data, selected_metric):
     """
     Compute consensus for a single reach.
 
@@ -167,8 +253,13 @@ def process_reach(reach_id, mntdir):
             time_arrs      = [time_arrs[i] for i in keep]
             included_algos = [included_algos[i] for i in keep]
 
-    consensus_arr, time_arr, included_algos = remove_low_cv_and_recalc_consensus(
-        arrs=arrs, time_arrs=time_arrs, CV_thresh=CV_THRESH, included_algos=included_algos
+    consensus_arr, time_arr, included_algos = remove_rf_bad_and_recalc_consensus(
+        reach_id=reach_id,
+        arrs=arrs, 
+        time_arrs=time_arrs, 
+        included_algos=included_algos,
+        rf_data=rf_data,
+        selected_metric=selected_metric
     )
 
     # Build nc file
@@ -230,8 +321,26 @@ def run_consensus(mntdir, indices, reachfile):
         reaches = json.load(fp)
         reach_ids = [reaches[i]['reach_id'] for i in indices]
 
+    
+    rf_file = next((mntdir.parent / 'input' / 'modules' / 'consensus').glob("RF_binary_pred_sword_*.nc"))
+
+    with Dataset(rf_file, "r") as ds:
+
+        rf_data = {
+            "reach_ids": ds.variables["reach_id"][:],
+            "algorithms": ds.variables["algorithm"][:],
+            "metrics": ds.variables["metric"][:],
+            "predictions": ds.variables["prediction"][:]
+        }
+
+    selected_metric = "nBIAS_binary" 
+    # "NSE_binary"
+    # "KGE_binary"
+    # "Pearson_r_binary"
+    # "nBIAS_binary"
+
     for reach_id in reach_ids:
-        process_reach(reach_id, mntdir)
+        process_reach(reach_id, mntdir, rf_data, selected_metric)
 
 
 def parse_range(index_str):
