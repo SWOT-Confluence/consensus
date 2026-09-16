@@ -322,7 +322,7 @@ def run_consensus(mntdir, indices, reachfile):
         reach_ids = [reaches[i]['reach_id'] for i in indices]
 
     
-    rf_file = next((mntdir.parent / 'input' / 'modules' / 'consensus').glob("RF_binary_pred_sword_*.nc"))
+    rf_file = next((mntdir.parent / 'modules' / 'consensus').glob("RF_binary_pred_sword_*.nc"))
 
     with Dataset(rf_file, "r") as ds:
 
