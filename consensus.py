@@ -163,9 +163,10 @@ def remove_rf_bad_and_recalc_consensus(reach_id, arrs, time_arrs, included_algos
 
 
     # -------------------------------------------------
-    # Compute median consensus
+    # Compute consensus
     # -------------------------------------------------
-    consensus_arr = np.nanmedian(
+    # consensus_arr = np.nanmedian(
+    consensus_arr = np.nanmean(
         np.stack(rf_arrs, axis=0),
         axis=0
     )
