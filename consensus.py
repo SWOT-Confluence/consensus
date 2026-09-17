@@ -334,7 +334,7 @@ def run_consensus(mntdir, indices, reachfile):
             "predictions": ds.variables["prediction"][:]
         }
 
-    selected_metric = "nBIAS_binary" 
+    selected_metric = "KGE_binary" 
     # "NSE_binary"
     # "KGE_binary"
     # "Pearson_r_binary"
