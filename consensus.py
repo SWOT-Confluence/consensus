@@ -35,10 +35,10 @@ ALGO_METADATA = {
     },
 }
 # removing sad for version 4
-#    'sad':{
-#        'qvar':'Qa',
-#        'time':'time_str'
-#    },
+   'sad':{
+       'qvar':'Qa',
+       'time':'time_str'
+   },
 
 FILL_VALUE = -999999999999.0
 FILL_VALUE_STR = "no_data"
