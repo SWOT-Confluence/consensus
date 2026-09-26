@@ -7,7 +7,7 @@ AWS Batch index.
 import argparse as ap
 from pathlib import Path
 import json
-from netCDF4 import Dataset
+from netCDF4 import Dataset, chartostring
 import numpy as np
 import os
 import datetime
@@ -208,6 +208,10 @@ def process_reach(reach_id, mntdir, rf_data, selected_metric):
                     continue
 
                 algo_time = ds.variables[metadata['time']][:]
+
+                if (algo_time.ndim == 2 and algo_time.dtype.kind in ("S", "U")):
+                    algo_time = chartostring(algo_time)
+    
                 if algo == 'sic4dvar':
                     mask = np.ma.getmaskarray(algo_time)
                     valid_indexes = [i for i in range(algo_time.shape[0])]
