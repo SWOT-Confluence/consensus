@@ -12,6 +12,7 @@ import numpy as np
 import os
 import datetime
 
+
 ALGO_METADATA = {
     'momma': {
         'qvar':'Q',
@@ -33,8 +34,6 @@ ALGO_METADATA = {
         'qvar':'q/q',
         'time':'time'
     },
-# }
-# removing sad for version 4
    'sad':{
        'qvar':'Qa',
        'time':'time_str'
@@ -43,6 +42,82 @@ ALGO_METADATA = {
 
 FILL_VALUE = -999999999999.0
 FILL_VALUE_STR = "no_data"
+
+
+
+def normalize_time(var):
+    """
+    Normalize different algorithm time formats to
+    'YYYY-MM-DDTHH:MM:SSZ'
+    """
+
+    t = var[:]
+
+    # Character array: (nt, nchars) -> (nt,)
+    if t.ndim == 2 and t.dtype.kind in ("S", "U"):
+        t = chartostring(t)
+
+    # String/object time
+    if t.dtype.kind in ("S", "U", "O"):
+
+        result = []
+
+        for x in t:
+
+            if np.ma.is_masked(x) or x is None:
+                result.append(None)
+                continue
+
+            if isinstance(x, bytes):
+                x = x.decode()
+
+            x = str(x).strip()
+
+            # Standardize to YYYY-MM-DDTHH:MM:SSZ
+            x = x.rstrip("Z")
+
+            if "." in x:
+                x = x.split(".")[0]
+
+            result.append(x + "Z")
+
+        return np.asarray(result, dtype=object)
+
+
+    # Numeric time with CF-style units
+    if np.issubdtype(t.dtype, np.number):
+
+        units = getattr(var, "units", None)
+        calendar = getattr(var, "calendar", "standard")
+
+        if units is None:
+            raise ValueError(
+                "Numeric time variable has no 'units' attribute"
+            )
+
+        dates = num2date(
+            t,
+            units=units,
+            calendar=calendar
+        )
+
+        result = []
+
+        for x, d in zip(t, dates):
+
+            if np.ma.is_masked(x):
+                result.append(None)
+            else:
+                result.append(
+                    d.strftime("%Y-%m-%dT%H:%M:%SZ")
+                )
+
+        return np.asarray(result, dtype=object)
+
+    raise ValueError(
+        f"Unsupported time format: "
+        f"shape={t.shape}, dtype={t.dtype}"
+    )
 
 
 
@@ -196,51 +271,79 @@ def process_reach(reach_id, mntdir, rf_data, selected_metric):
 
     for algo, metadata in ALGO_METADATA.items():
         infile = mntdir / 'flpe' / algo / f'{reach_id}_{algo}.nc'
+        
         if not os.path.exists(infile):
             continue
+            
         try:
             with Dataset(infile, 'r') as ds:
-                arr = ds[metadata['qvar']][:].filled(np.nan)
+                try:
+                    arr = ds[metadata['qvar']][:]
+                except (KeyError, IndexError) as e:
 
-                # Skip if array is effectively empty (e.g. busboi all-NA case returns 1x1)
-                if arr.size <= 1:
-                    print(f"  Skipping {algo} for reach {reach_id}: array too small (size={arr.size})")
+                    print(f"  Skipping {algo} for reach {reach_id}: "
+                          f"Q variable could not be read ({e})")
                     continue
 
-                algo_time = ds.variables[metadata['time']][:]
 
-                if (algo_time.ndim == 2 and algo_time.dtype.kind in ("S", "U")):
-                    algo_time = chartostring(algo_time)
-    
-                if algo == 'sic4dvar':
-                    mask = np.ma.getmaskarray(algo_time)
-                    valid_indexes = [i for i in range(algo_time.shape[0])]
+                # Convert masked array to NaN
+                if np.ma.isMaskedArray(arr):
+                    arr = arr.filled(np.nan)
 
-                    if valid_indexes:
-                        valid_sic_str = [algo_time[i] for i in valid_indexes]
-                        swot_ts = datetime.datetime(2000, 1, 1, 0, 0, 0)
+                arr = np.asarray(arr, dtype=float).squeeze()
 
-                        valid_sic_str = np.array(valid_sic_str, dtype=float)
-                        valid_sic_str = np.where(np.ma.getmaskarray(valid_sic_str), np.nan, valid_sic_str)
 
-                        algo_time = np.array([
-                            (swot_ts + datetime.timedelta(days=t)).strftime("%Y-%m-%dT%H:%M:%SZ") if not np.isnan(t) else None
-                            for t in valid_sic_str
-                        ])
+                # Invalid / empty algorithm output
+                if arr.ndim != 1 or arr.size <= 1:
 
-                time = algo_time
+                    print(f"  Skipping {algo} for reach {reach_id}: "
+                          f"invalid Q shape {arr.shape}")
+                    continue
 
+
+                # Read time variable
+                time_var_name = metadata['time']
+
+                if time_var_name not in ds.variables:
+                    print(f"  Skipping {algo} for reach {reach_id}: "
+                          f"time variable '{time_var_name}' not found")
+                    continue
+
+
+                # Normalize time
+                try:
+                    time = normalize_time(ds.variables[time_var_name])
+
+                except Exception as e:
+                    print(f"  Skipping {algo} for reach {reach_id}: "
+                          f"could not decode time ({e})")
+                    continue
+
+
+                # Check Q/time consistency
+                if len(time) != len(arr):
+                    print(f"  Skipping {algo} for reach {reach_id}: "
+                          f"Q/time length mismatch (Q={len(arr)}, time={len(time)})")
+                    continue
+
+
+                # Original Q validity checks
                 # treat negative discharge as NaN
                 arr[arr < 0] = np.nan
+
                 # ignore algos with no nonnegative discharge
                 if not np.any(arr >= 0):
                     continue
 
+
+                # Everything is valid
                 arrs.append(arr)
                 time_arrs.append(time)
                 included_algos.append(algo)
 
-        except (IOError, OSError):
+
+        except (IOError, OSError, KeyError) as e:
+            print(f"  Skipping {algo} for reach {reach_id}: {e}")
             continue
 
     if not len(arrs):
