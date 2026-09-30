@@ -73,6 +73,11 @@ def normalize_time(var):
 
             x = str(x).strip()
 
+            # Handle missing / fill-value time strings
+            if x in ("", "no_data", "--", "nan", "None"):
+                result.append(None)
+                continue
+
             # Standardize to YYYY-MM-DDTHH:MM:SSZ
             x = x.rstrip("Z")
 
