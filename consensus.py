@@ -7,7 +7,7 @@ AWS Batch index.
 import argparse as ap
 from pathlib import Path
 import json
-from netCDF4 import Dataset, chartostring
+from netCDF4 import Dataset, chartostring, num2date
 import numpy as np
 import os
 import datetime
