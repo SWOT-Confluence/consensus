@@ -45,7 +45,7 @@ FILL_VALUE_STR = "no_data"
 
 
 
-def normalize_time(var):
+def normalize_time(var, algo=None):
     """
     Normalize different algorithm time formats to
     'YYYY-MM-DDTHH:MM:SSZ'
@@ -93,6 +93,10 @@ def normalize_time(var):
     if np.issubdtype(t.dtype, np.number):
 
         units = getattr(var, "units", None)
+        
+        if algo == "sic4dvar":
+            units = "days since 2000-01-01 00:00:00"
+            
         calendar = getattr(var, "calendar", "standard")
 
         if units is None:
@@ -317,7 +321,7 @@ def process_reach(reach_id, mntdir, rf_data, selected_metric):
 
                 # Normalize time
                 try:
-                    time = normalize_time(ds.variables[time_var_name])
+                    time = normalize_time(ds.variables[time_var_name], algo)
 
                 except Exception as e:
                     print(f"  Skipping {algo} for reach {reach_id}: "
