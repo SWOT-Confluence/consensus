@@ -301,6 +301,12 @@ def process_reach(reach_id, mntdir, rf_data, selected_metric):
 
                 arr = np.asarray(arr, dtype=float).squeeze()
 
+                # Skip if there are no valid Q values
+                if not np.any(np.isfinite(arr)):
+                    print(f"  Skipping {algo} for reach {reach_id}: "
+                          f"no valid Q values")
+                    continue
+
 
                 # Invalid / empty algorithm output
                 if arr.ndim != 1 or arr.size <= 1:
