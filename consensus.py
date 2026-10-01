@@ -166,6 +166,7 @@ def remove_rf_bad_and_recalc_consensus(reach_id, arrs, time_arrs, included_algos
     rf_arrs = []
     rf_included_algos = []
     rf_time_arrs = []
+    prediction_logs = []
 
 
     # -------------------------------------------------
@@ -221,9 +222,7 @@ def remove_rf_bad_and_recalc_consensus(reach_id, arrs, time_arrs, included_algos
             metric_idx
         ]
 
-        print(
-            f"  {algo}: {selected_metric} prediction = {pred}"
-        )
+        prediction_logs.append(f"  {algo}: {selected_metric} prediction = {pred}")
 
         if pred == 1:
             rf_arrs.append(arr)
@@ -235,16 +234,16 @@ def remove_rf_bad_and_recalc_consensus(reach_id, arrs, time_arrs, included_algos
     # No algorithms remain after RF filtering
     # -------------------------------------------------
     if not len(rf_arrs):
-        print(
-            f"All algorithms removed by RF for reach {reach_id} "
-            f"using {selected_metric}."
-        )
+        print(f"  All algorithms removed by RF using '{selected_metric}'")
 
         return (
             np.full_like(arrs[0], np.nan),
             np.full_like(arrs[0], "no_data", dtype=object),
             []
         )
+
+    for msg in prediction_logs:
+        print(msg)
 
 
     # -------------------------------------------------
@@ -290,8 +289,7 @@ def process_reach(reach_id, mntdir, rf_data, selected_metric):
                     arr = ds[metadata['qvar']][:]
                 except (KeyError, IndexError) as e:
 
-                    print(f"  Skipping {algo} for reach {reach_id}: "
-                          f"Q variable could not be read ({e})")
+                    print(f"  Skipping {algo}: Q variable could not be read ({e})")
                     continue
 
 
@@ -303,16 +301,14 @@ def process_reach(reach_id, mntdir, rf_data, selected_metric):
 
                 # Skip if there are no valid Q values
                 if not np.any(np.isfinite(arr)):
-                    print(f"  Skipping {algo} for reach {reach_id}: "
-                          f"no valid Q values")
+                    print(f"  Skipping {algo}: no valid Q values")
                     continue
 
 
                 # Invalid / empty algorithm output
                 if arr.ndim != 1 or arr.size <= 1:
 
-                    print(f"  Skipping {algo} for reach {reach_id}: "
-                          f"invalid Q shape {arr.shape}")
+                    print(f"  Skipping {algo}: invalid Q shape {arr.shape}")
                     continue
 
 
@@ -320,8 +316,7 @@ def process_reach(reach_id, mntdir, rf_data, selected_metric):
                 time_var_name = metadata['time']
 
                 if time_var_name not in ds.variables:
-                    print(f"  Skipping {algo} for reach {reach_id}: "
-                          f"time variable '{time_var_name}' not found")
+                    print(f"  Skipping {algo}: time variable '{time_var_name}' not found")
                     continue
 
 
@@ -330,15 +325,13 @@ def process_reach(reach_id, mntdir, rf_data, selected_metric):
                     time = normalize_time(ds.variables[time_var_name], algo)
 
                 except Exception as e:
-                    print(f"  Skipping {algo} for reach {reach_id}: "
-                          f"could not decode time ({e})")
+                    print(f"  Skipping {algo}: could not decode time ({e})")
                     continue
 
 
                 # Check Q/time consistency
                 if len(time) != len(arr):
-                    print(f"  Skipping {algo} for reach {reach_id}: "
-                          f"Q/time length mismatch (Q={len(arr)}, time={len(time)})")
+                    print(f"  Skipping {algo}: Q/time length mismatch (Q={len(arr)}, time={len(time)})")
                     continue
 
 
@@ -358,7 +351,7 @@ def process_reach(reach_id, mntdir, rf_data, selected_metric):
 
 
         except (IOError, OSError, KeyError) as e:
-            print(f"  Skipping {algo} for reach {reach_id}: {e}")
+            print(f"  Skipping {algo}: {e}")
             continue
 
     if not len(arrs):
