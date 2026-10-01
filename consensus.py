@@ -100,9 +100,7 @@ def normalize_time(var, algo=None):
         calendar = getattr(var, "calendar", "standard")
 
         if units is None:
-            raise ValueError(
-                "Numeric time variable has no 'units' attribute"
-            )
+            raise ValueError("Numeric time variable has no 'units' attribute")
 
         dates = num2date(
             t,
@@ -191,9 +189,7 @@ def remove_rf_bad_and_recalc_consensus(reach_id, arrs, time_arrs, included_algos
     metric_idx = np.where(rf_data["metrics"] == selected_metric)[0]
 
     if len(metric_idx) == 0:
-        raise ValueError(
-            f"Metric '{selected_metric}' not found in RF predictions."
-        )
+        raise ValueError(f"Metric '{selected_metric}' not found in RF predictions.")
 
     metric_idx = metric_idx[0]
 
@@ -355,7 +351,7 @@ def process_reach(reach_id, mntdir, rf_data, selected_metric):
             continue
 
     if not len(arrs):
-        print(f"No data for reach '{reach_id}'")
+        print(f"  No data")
         return
 
     # Ensure all arrays are the same length — drop any that don't match the majority
