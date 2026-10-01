@@ -114,7 +114,7 @@ def normalize_time(var, algo=None):
 
         for x, d in zip(t, dates):
 
-            if np.ma.is_masked(x):
+            if np.ma.is_masked(x) or np.ma.is_masked(d):
                 result.append(None)
             else:
                 result.append(
